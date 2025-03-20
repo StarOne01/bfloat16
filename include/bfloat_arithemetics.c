@@ -151,3 +151,52 @@ bfloat16_t bfloat16_multiply(bfloat16_t a, bfloat16_t b) {
     
     return bfloat16_pack(sign_r, exp_r, mant_r);
 }
+
+bfloat16_t bfloat16_divide(bfloat16_t a, bfloat16_t b) {
+    if ((a.bits & ~BFLOAT16_SIGN_MASK) == 0) {
+        if ((b.bits & ~BFLOAT16_SIGN_MASK) == 0) {
+            return BFLOAT16_NAN;
+        }
+        return (bfloat16_t){.bits = ((a.bits ^ b.bits) & BFLOAT16_SIGN_MASK)};
+    }
+    
+    if ((b.bits & ~BFLOAT16_SIGN_MASK) == 0) {
+        return (bfloat16_t){.bits = ((a.bits ^ b.bits) & BFLOAT16_SIGN_MASK) | 0x7F80};
+    }
+    
+    uint16_t sign_a, sign_b, sign_r;
+    int16_t exp_a, exp_b, exp_r;
+    uint16_t mant_a, mant_b;
+    uint32_t mant_r;
+    
+    bfloat16_unpack(a, &sign_a, &exp_a, &mant_a);
+    bfloat16_unpack(b, &sign_b, &exp_b, &mant_b);
+    
+    sign_r = sign_a ^ sign_b;
+    exp_r = exp_a - exp_b + BFLOAT16_EXP_BIAS;
+    mant_a <<= 8;
+    mant_r = ((uint32_t)mant_a / (uint32_t)mant_b);
+    
+    if (mant_r == 0) {
+        return (bfloat16_t){.bits = sign_r << 15};
+    }
+    
+    int shift = 0;
+    uint32_t temp = mant_r;
+    while (temp & 0xFF00) {
+        temp >>= 1;
+        shift++;
+    }
+    
+    if (shift > 0) {
+        mant_r >>= shift;
+        exp_r += shift;
+    } else {
+        while ((mant_r & 0x0080) == 0) {
+            mant_r <<= 1;
+            exp_r--;
+        }
+    }
+    
+    return bfloat16_pack(sign_r, exp_r, mant_r & 0x00FF);
+}
