@@ -59,6 +59,10 @@ int bfloat16_gt(bfloat16_t a, bfloat16_t b);
 int bfloat16_isnan(bfloat16_t a);
 int bfloat16_isinf(bfloat16_t a);
 
+// Exponent bias utility functions
+int16_t bfloat16_get_exponent(bfloat16_t value);
+bfloat16_t bfloat16_set_exponent(bfloat16_t value, int16_t exp);
+
 #ifdef __cplusplus
 }
 #endif
