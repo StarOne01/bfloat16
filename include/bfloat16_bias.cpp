@@ -7,30 +7,30 @@ int16_t bfloat16_get_exponent(bfloat16_t value) {
     float f = (float)value;
     int32_t bits;
     memcpy(&bits, &f, sizeof(float));
-    
+
     // Extract biased exponent
     int16_t biased_exp = (bits >> 23) & 0xFF;
-    
+
     // Handle special cases
     if (biased_exp == 0) {
         return (bits & 0x007FFFFF) ? -126 : -INT16_MAX; // Denormal or zero
     } else if (biased_exp == 0xFF) {
         return INT16_MAX; // Infinity or NaN
     }
-    
+
     // Return unbiased exponent
     return biased_exp - BFLOAT16_EXP_BIAS;
 #else
     // Extract biased exponent
     uint16_t biased_exp = (value.bits & BFLOAT16_EXP_MASK) >> 7;
-    
+
     // Handle special cases
     if (biased_exp == 0) {
         return (value.bits & BFLOAT16_MANT_MASK) ? -126 : -INT16_MAX; // Denormal or zero
     } else if (biased_exp == 0xFF) {
         return INT16_MAX; // Infinity or NaN
     }
-    
+
     // Return unbiased exponent
     return biased_exp - BFLOAT16_EXP_BIAS;
 #endif
@@ -43,10 +43,10 @@ bfloat16_t bfloat16_set_exponent(bfloat16_t value, int16_t exp) {
     float f = (float)value;
     int32_t bits;
     memcpy(&bits, &f, sizeof(float));
-    
+
     // Clear exponent bits
     bits &= ~(0xFF << 23);
-    
+
     // Handle special cases
     if (exp <= -126) {
         // Denormal or zero, keep mantissa and sign only
@@ -56,25 +56,25 @@ bfloat16_t bfloat16_set_exponent(bfloat16_t value, int16_t exp) {
         uint16_t sign_bit = value.bits & BFLOAT16_SIGN_MASK;
         return (bfloat16_t){.bits = sign_bit | 0x7F80};
     }
-    
+
     // Set new exponent
     bits |= ((exp + BFLOAT16_EXP_BIAS) & 0xFF) << 23;
-    
+
     // Convert back to float and then to bfloat16
     memcpy(&f, &bits, sizeof(float));
     return float_to_bfloat16(f);
 #else
     bfloat16_t result = value;
-    
+
     // Clear exponent bits
     result.bits &= ~BFLOAT16_EXP_MASK;
-    
+
     // Handle special cases
     if (exp <= -126) {
         // Try to create denormal by shifting mantissa
         uint16_t mant = value.bits & BFLOAT16_MANT_MASK;
         uint16_t shift = 1 - (exp + 126);
-        
+
         if (shift >= BFLOAT16_MANT_BITS) {
             // Underflow to zero
             result.bits &= BFLOAT16_SIGN_MASK; // Keep sign only
@@ -88,7 +88,7 @@ bfloat16_t bfloat16_set_exponent(bfloat16_t value, int16_t exp) {
         // Infinity
         return (bfloat16_t){.bits = static_cast<uint16_t>((value.bits & BFLOAT16_SIGN_MASK) | 0x7F80)};
     }
-    
+
     // Set new exponent (biased)
     result.bits |= ((exp + BFLOAT16_EXP_BIAS) & 0xFF) << 7;
     return result;
@@ -117,7 +117,7 @@ bfloat16_t bfloat16_exp2(int16_t exp) {
         // Too large, return infinity
         return BFLOAT16_INFINITY;
     }
-    
+
     // 2^exp = 1.0 * 2^exp
     bfloat16_t one = {.bits = 0x3F80}; // 1.0 in bfloat16
     return bfloat16_set_exponent(one, exp);
