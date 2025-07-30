@@ -5,7 +5,6 @@
 
 // Implementation of float to bfloat16 conversion
 bfloat16_t float_to_bfloat16(float value) {
-    printf("Converting %f to bfloat16\n", value);  
 #if BFLOAT16_NATIVE_SUPPORT
     // Use native conversion if available
     return (bfloat16_t)value;
