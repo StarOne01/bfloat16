@@ -5,7 +5,6 @@
 
 // Implementation of float to bfloat16 conversion
 bfloat16_t float_to_bfloat16(float value) {
-    printf("Converting %f to bfloat16\n", value);  
 #if BFLOAT16_NATIVE_SUPPORT
     // Use native conversion if available
     return (bfloat16_t)value;
@@ -13,18 +12,18 @@ bfloat16_t float_to_bfloat16(float value) {
     // Software implementation
     uint32_t f32bits;
     memcpy(&f32bits, &value, sizeof(float));
-    
+
     // bfloat16 is simply the upper 16 bits of float32
     // Extract upper 16 bits (with rounding)
     uint16_t result;
-    
+
     // Round to nearest even
     uint32_t rounding_bias = ((f32bits & 0x00010000) >> 1) + 0x00007FFF;
     f32bits += rounding_bias;
-    
+
     // Extract the high 16 bits
     result = (uint16_t)(f32bits >> 16);
-    
+
     bfloat16_t bf16;
     bf16.bits = result;
     return bf16;
@@ -39,7 +38,7 @@ float bfloat16_to_float(bfloat16_t value) {
 #else
     // Manual conversion
     uint32_t f32bits = ((uint32_t)value.bits << 16);
-    
+
     float result;
     memcpy(&result, &f32bits, sizeof(float));
     return result;
