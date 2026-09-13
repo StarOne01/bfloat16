@@ -30,3 +30,17 @@
 *.exe
 *.out
 *.app
+
+# CMake / build trees
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+install_manifest.txt
+
+# Test binaries
+bfloat_test
+bfloat_test.exe
