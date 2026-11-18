@@ -141,8 +141,9 @@ bool less = a < b;
 
 ## Acknowledgements
 
-Thanks to [tansy](https://github.com/tansy) for the early fixes and feedback
-that started this work.
+Thanks to [tansy](https://github.com/tansy) for the first pull request and for
+pointing out the header-only claim, which prompted a cleanup of the build
+and documentation.
 
 ## License
 
