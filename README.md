@@ -1,3 +1,5 @@
+[![CI](https://github.com/StarOne01/bfloat16/actions/workflows/ci.yml/badge.svg)](https://github.com/StarOne01/bfloat16/actions/workflows/ci.yml)
+
 A lightweight C++ implementation of the Brain Floating Point (bfloat16) format.
 
 ## Overview
@@ -21,8 +23,8 @@ This implementation represents bfloat16 as:
   (`isnan`, `isinf`, `isfinite`, `iszero`, `issubnormal`, `signbit`)
 - Exponent utilities (`get_exponent`, `set_exponent`, `ldexp`, `exp2`)
 - Lightweight C++ operator overloads (`+ - * /`, comparisons)
-- CMake build with CTest suite (134 C++ assertions, a C99 API test, plus
-  opt-in exhaustive tests)
+- CMake build with CTest suite (134 C++ assertions, C99 API test, Python
+  exact-fma and ml_dtypes differential tests, plus opt-in exhaustive tests)
 
 ## Layout
 
@@ -34,6 +36,8 @@ src/bfloat_comp.cpp     comparisons and classification
 src/bfloat16_bias.cpp   exponent utilities
 bfloat_test.cpp         C++ test suite (also serves as a usage example)
 test_c.c                C99 API test
+test_fma_exact.py       exact-rational fma differential test
+test_ml_dtypes.py       sampled ml_dtypes differential test
 CMakeLists.txt          build (static lib + tests + install rules)
 ```
 
@@ -45,8 +49,10 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-CTest runs the C++ suite and `bfloat_test_c`, a C99 translation unit compiled
-with `-std=c99 -Wall -Wextra` to verify the header works from C.
+CTest runs the C++ suite, `bfloat_test_c` (a C99 translation unit compiled
+with `-std=c99 -Wall -Wextra`), an exact-rational fma differential test, and,
+when Python's `ml_dtypes` is installed, a sampled arithmetic differential
+test against that independent implementation.
 
 The full exhaustive suite checks all 2^32 float inputs and all 2^32 bf16
 operand pairs for add/subtract/multiply/divide against GCC's independent
@@ -68,6 +74,17 @@ g++ -Iinclude -Wall -Wextra -std=c++17 bfloat_test.cpp src/*.cpp -o bfloat_test 
 
 To use the library in your own project, add `include/` to your include path
 and compile the four `src/*.cpp` files (or link the installed `libbfloat16.a`).
+
+## Verification
+
+- Exhaustive `float_to_bfloat16` against GCC `__bf16` over all 2^32 float bit
+  patterns.
+- Exhaustive add, subtract, multiply, and divide against GCC `__bf16` over
+  all 2^32 bf16 operand pairs for each operation.
+- Fused multiply-add against an exact rational reference, including every
+  addend for targeted tie cases such as `fma(15, 23, 2^-60)`.
+- A deterministic sample cross-checked against Python `ml_dtypes`.
+- The public header compiled and linked as strict C99.
 
 ## Usage
 
@@ -108,6 +125,10 @@ bool less = a < b;
 - **`-ffast-math`:** do not use `-ffast-math` or `-ffinite-math-only` when
   compiling this library. They let the compiler assume NaN and infinity
   cannot occur, which breaks the documented IEEE 754 behavior.
+- **Platform caveats:** FTZ/DAZ modes flush bf16 subnormals to zero in the
+  widening arithmetic and break the documented subnormal behavior. On 32-bit
+  x86 without SSE2, x87 extended-precision evaluation can reintroduce double
+  rounding; x86-64 and ARM64 are unaffected.
 - **NaN handling:** conversions preserve NaN payload top bits and force the
   quiet bit, so a NaN can never collapse into zero or infinity by truncation.
 - **`set_exponent` vs `ldexp`:** `set_exponent` is raw bit manipulation
@@ -117,6 +138,11 @@ bool less = a < b;
 - **Native types:** storage is always the portable struct, even where the
   compiler offers `__bf16`. `BFLOAT16_HAS_NATIVE` reports its presence for
   informational purposes only.
+
+## Acknowledgements
+
+Thanks to [tansy](https://github.com/tansy) for the early fixes and feedback
+that started this work.
 
 ## License
 
