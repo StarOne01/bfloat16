@@ -2,6 +2,8 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
 /*
  * Arithmetic via a higher-precision intermediate.
@@ -9,10 +11,17 @@
  * Every bfloat16 value is exactly representable in float32 (same exponent,
  * shorter mantissa), so widening is exact. The operation itself runs in
  * double precision and the result is rounded once to bfloat16 with
- * round-to-nearest-even. This yields correctly-rounded results up to the
- * usual double-rounding caveat (negligible: the intermediate carries 45
- * extra mantissa bits), while NaN / Inf / signed-zero semantics come for
- * free from IEEE 754 double arithmetic.
+ * round-to-nearest-even.
+ *
+ * Add, subtract, multiply, and divide are correctly rounded: double carries
+ * 53 significand bits, well above the 2p+2 = 18 bits needed for double
+ * rounding to be harmless when the target has p = 8 bits. Fused multiply-add
+ * is different: a*b+c can sit exactly on a bf16 midpoint while the tiny
+ * residual is below a double ulp, so its intermediate is first perturbed to
+ * odd (round-to-odd) before the final narrowing.
+ *
+ * NaN / Inf / signed-zero semantics come for free from IEEE 754 double
+ * arithmetic.
  *
  * Why not hand-rolled integer bit manipulation? The previous integer paths
  * had wrong exponent accounting in divide (1/1 produced 2), crashed with
@@ -52,17 +61,31 @@ bfloat16_t bfloat16_abs(bfloat16_t a) {
 }
 
 bfloat16_t bfloat16_fma(bfloat16_t a, bfloat16_t b, bfloat16_t c) {
-    /* Single rounding: exact a*b+c in double, then one RNE step. Note this
-     * is *more* accurate than two roundings (multiply then add). */
-    double r = fma((double)bfloat16_to_float(a),
-                   (double)bfloat16_to_float(b),
-                   (double)bfloat16_to_float(c));
-    return double_to_bfloat16(r);
+    /* a*b is exact in double (at most 16 significand bits). TwoSum gives the
+     * exact residual of x + y even when the sum rounds; forcing an inexact
+     * result to odd makes the final bf16 rounding equivalent to rounding the
+     * exact a*b+c once. */
+    double x = (double)bfloat16_to_float(a) * (double)bfloat16_to_float(b);
+    double y = (double)bfloat16_to_float(c);
+    double s = x + y;
+    if (isfinite(s)) {
+        double bb = s - x;
+        double err = (x - (s - bb)) + (y - bb);
+        if (err != 0.0) {
+            uint64_t u;
+            memcpy(&u, &s, sizeof(u));
+            if ((u & 1ULL) == 0ULL) {
+                s = nextafter(s, err > 0.0 ? INFINITY : -INFINITY);
+            }
+        }
+    }
+    return double_to_bfloat16(s);
 }
 
 double bfloat16_dot(const bfloat16_t *a, const bfloat16_t *b, int n) {
-    /* Accumulate in double: the common ML "mixed precision" pattern where
-     * storage is bf16 but reduction stays in fp32/fp64. */
+    /* Mixed precision: storage is bf16, each product is exact in double, and
+     * terms are accumulated left-to-right (i = 0..n-1) in one double
+     * accumulator. Every addition rounds to double; there is no reordering. */
     double acc = 0.0;
     if (a == NULL || b == NULL || n <= 0) {
         return acc;

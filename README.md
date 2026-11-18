@@ -21,17 +21,19 @@ This implementation represents bfloat16 as:
   (`isnan`, `isinf`, `isfinite`, `iszero`, `issubnormal`, `signbit`)
 - Exponent utilities (`get_exponent`, `set_exponent`, `ldexp`, `exp2`)
 - Lightweight C++ operator overloads (`+ - * /`, comparisons)
-- CMake build with CTest suite (118 assertions)
+- CMake build with CTest suite (134 C++ assertions, a C99 API test, plus
+  opt-in exhaustive tests)
 
 ## Layout
 
 ```text
 include/bfloat16.h      public API (C + C++ overloads)
 src/bfloat16_convo.cpp  float/double conversions
-src/bfloat_arithemetics.cpp  arithmetic (widen-compute-narrow)
+src/bfloat_arithmetics.cpp   arithmetic (widen-compute-narrow)
 src/bfloat_comp.cpp     comparisons and classification
 src/bfloat16_bias.cpp   exponent utilities
-bfloat_test.cpp         test suite (also serves as a usage example)
+bfloat_test.cpp         C++ test suite (also serves as a usage example)
+test_c.c                C99 API test
 CMakeLists.txt          build (static lib + tests + install rules)
 ```
 
@@ -43,11 +45,25 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+CTest runs the C++ suite and `bfloat_test_c`, a C99 translation unit compiled
+with `-std=c99 -Wall -Wextra` to verify the header works from C.
+
+The full exhaustive suite checks all 2^32 float inputs and all 2^32 bf16
+operand pairs for add/subtract/multiply/divide against GCC's independent
+`__bf16` arithmetic. It is opt-in because it takes a few minutes:
+
+```sh
+cmake -S . -B build -DBFLOAT16_EXHAUSTIVE_TESTS=ON
+cmake --build build
+ctest --test-dir build -L exhaustive --output-on-failure
+```
+
 Or without CMake:
 
 ```sh
-g++ -Iinclude -Wall -Wextra -std=c++17 bfloat_test.cpp src/*.cpp -o bfloat_test
-./bfloat_test
+g++ -Iinclude -Wall -Wextra -std=c++17 bfloat_test.cpp src/*.cpp -o bfloat_test -lm
+./bfloat_test              # quick suite
+./bfloat_test --exhaustive # exhaustive suite
 ```
 
 To use the library in your own project, add `include/` to your include path
@@ -77,16 +93,27 @@ bool less = a < b;
 - **Rounding:** every narrowing conversion uses round-to-nearest-even.
   `double -> bfloat16` rounds directly from the 64-bit pattern (no intermediate
   `float` step), so there is no double-rounding error.
-- **Arithmetic:** operands widen exactly to `float`, the operation runs in
-  `double`, and the result is rounded once to bfloat16. This gives
-  correctly-rounded results up to the usual negligible double-rounding caveat,
-  with Inf / NaN / signed-zero semantics inherited from IEEE 754 arithmetic.
-  Overflow saturates to infinity.
+- **Arithmetic:** add, subtract, multiply, and divide widen exactly to `double`
+  and then round once to bfloat16. They are correctly rounded: the 53-bit
+  intermediate is far wider than the 2p+2 = 18 bits required to make double
+  rounding harmless for a p = 8 target. `fma` also rounds `a*b+c` correctly,
+  using round-to-odd on the double result to preserve the residual when the
+  exact value lies on a bf16 midpoint. Inf / NaN / signed-zero semantics are
+  inherited from IEEE 754 arithmetic; overflow produces infinity, as in IEEE
+  round-to-nearest.
+- **`dot`:** each bf16 pair is multiplied exactly in `double`, then the
+  products are accumulated left-to-right (`i = 0..n-1`) in a single `double`
+  accumulator. Every addition rounds to `double`; terms are not reordered or
+  reduced pairwise.
+- **`-ffast-math`:** do not use `-ffast-math` or `-ffinite-math-only` when
+  compiling this library. They let the compiler assume NaN and infinity
+  cannot occur, which breaks the documented IEEE 754 behavior.
 - **NaN handling:** conversions preserve NaN payload top bits and force the
   quiet bit, so a NaN can never collapse into zero or infinity by truncation.
 - **`set_exponent` vs `ldexp`:** `set_exponent` is raw bit manipulation
-  (keeps sign + mantissa, truncates on the way into the denormal range);
-  `ldexp`/`exp2` are true correctly-rounded arithmetic.
+  (keeps sign + mantissa, leaves NaN/Inf/zero unchanged, truncates on the way
+  into the denormal range); `ldexp`/`exp2` are true correctly-rounded
+  arithmetic.
 - **Native types:** storage is always the portable struct, even where the
   compiler offers `__bf16`. `BFLOAT16_HAS_NATIVE` reports its presence for
   informational purposes only.

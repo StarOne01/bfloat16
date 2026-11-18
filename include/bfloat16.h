@@ -14,9 +14,12 @@
  *   fast path in the future, but they never change the ABI.
  * - All conversions use round-to-nearest-even (RNE).
  * - Arithmetic is computed in higher precision (float operands promoted to
- *   double) and then rounded once to bfloat16, giving correctly-rounded
- *   results in all but adversarial double-rounding corner cases, with full
- *   IEEE 754 propagation of NaN / Inf / signed zero.
+ *   double) and then rounded once to bfloat16. Add/subtract/multiply/divide
+ *   are correctly rounded: double has 53 significand bits, far more than the
+ *   2p+2 = 18 bits needed for double rounding to be harmless with p = 8.
+ *   fma uses round-to-odd on the double result before the final rounding to
+ *   preserve the exact a*b+c residual. NaN / Inf / signed zero follow
+ *   IEEE 754.
  */
 
 #include <stdint.h>
@@ -102,8 +105,10 @@ bfloat16_t bfloat16_multiply(bfloat16_t a, bfloat16_t b);
 bfloat16_t bfloat16_divide(bfloat16_t a, bfloat16_t b);
 bfloat16_t bfloat16_negate(bfloat16_t a);
 bfloat16_t bfloat16_abs(bfloat16_t a);
-bfloat16_t bfloat16_fma(bfloat16_t a, bfloat16_t b, bfloat16_t c); /* a*b+c, single rounding */
-double bfloat16_dot(const bfloat16_t *a, const bfloat16_t *b, int n); /* sum(a[i]*b[i]) in double */
+bfloat16_t bfloat16_fma(bfloat16_t a, bfloat16_t b, bfloat16_t c); /* a*b+c, correctly rounded */
+/* Left-to-right dot product (i = 0..n-1): each bf16*bf16 product is exact in
+ * double, and each addition is rounded to double. Null/empty input is +0.0. */
+double bfloat16_dot(const bfloat16_t *a, const bfloat16_t *b, int n);
 
 /* Comparisons. Return 1 (true) or 0 (false); any NaN operand makes
  * eq/lt/le/gt/ge false and ne true. Signed zeros compare equal. */
@@ -123,9 +128,10 @@ int bfloat16_issubnormal(bfloat16_t a);
 int bfloat16_signbit(bfloat16_t a); /* 1 if negative (incl. -0, -NaN), else 0 */
 
 /* Exponent utilities. Exponents are *unbiased* (e.g. 1.0 -> 0, 2.0 -> 1).
- * get_exponent returns INT16_MAX for Inf/NaN and INT16_MIN for zero
- * (denormals report -126). set_exponent is raw bit manipulation: it keeps
- * sign+mantissa and rewrites the biased field; transitions into the
+ * get_exponent returns INT16_MAX for Inf/NaN, INT16_MIN for zero, and -126
+ * for denormals (the effective exponent of the denormal range).
+ * set_exponent is raw bit manipulation: it keeps sign+mantissa and rewrites
+ * the biased field, leaving NaN/Inf/zero unchanged; transitions into the
  * denormal range truncate the mantissa. ldexp/exp2 are arithmetic
  * (correctly rounded multiply-by-2^exp / 2^exp). */
 int16_t bfloat16_get_exponent(bfloat16_t value);
